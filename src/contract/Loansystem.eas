@@ -1,0 +1,69 @@
+include "String.aes"
+
+contract LoanSystem =
+
+    record loan = {
+        loanUser : address,
+        loanGiver : address,
+        amount : int,
+        isRepaid : bool,
+        loanName : string,
+        shortMessage : string,
+        isGranted : bool,
+        loanPeriod : string}
+
+    record state = {
+        loans : map(address, loan)
+        }
+
+    stateful entrypoint init() : state = {
+        loans = {}}
+
+    stateful entrypoint addLoan(loanName : string, shortMessage : string, amount : int, period : string) =
+        
+        let loanInfo = {
+            loanUser = Call.caller,
+            loanGiver = Call.caller,
+            amount = amount,
+            isRepaid = false,
+            loanName = loanName,
+            shortMessage = shortMessage,
+            isGranted = false,
+            loanPeriod = period}
+        put(state{loans[Call.caller] = loanInfo})
+
+
+    payable stateful entrypoint giveLoan(loanUser : address, loanName : string) =
+        let loan_info =
+            switch(Map.lookup(loanUser, state.loans))
+                None    => abort("No loan information")
+                Some(e) => e
+        
+        require(loan_info.loanName == loanName, "Loan info not found with that name")
+        require(!loan_info.isGranted, "Loan is already granted")
+
+        Chain.spend(loanUser, loan_info.amount)
+        let update_loan_info = loan_info{loanGiver = Call.caller, isGranted = true}
+        put(state{loans[loanUser] = update_loan_info})
+
+    entrypoint getInformationAboutLoan() : option(loan) =
+        Map.lookup(Call.caller,state.loans)
+    
+    payable stateful entrypoint loanRepay(loanGiver:address) = 
+        let getInfo = 
+            switch(Map.lookup(Call.caller,state.loans))
+                None    => abort("No loan information")
+                Some(e) => e
+        require(getInfo.isGranted, "Loan is not Granted, Cannot Repay")
+        require(!getInfo.isRepaid, " Loan is Already Paid")
+        Chain.spend(getInfo.loanGiver,getInfo.amount)
+        let updateInfo = getInfo{isRepaid = true}
+        put(state{loans[Call.caller] = updateInfo})
+    
+    entrypoint checkForLoanRepay(loanUser: address) : bool =
+        let getInfo =
+            switch(Map.lookup(loanUser,state.loans))
+                None    => abort("No Loan information")
+                Some(e) => e
+        
+        getInfo.isRepaid
